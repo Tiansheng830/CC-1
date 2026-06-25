@@ -7,10 +7,8 @@ A feature-rich Pomodoro timer with a clean macOS-native interface.
 import tkinter as tk
 from tkinter import ttk, messagebox
 import time
-import threading
 import os
 import json
-from datetime import datetime, timedelta
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 CONFIG_FILE = os.path.expanduser("~/.pomodoro_config.json")
@@ -29,7 +27,6 @@ COLORS = {
     "accent": "#e07050",
     "accent_light": "#f0a080",
     "success": "#70b080",
-    "success_bg": "#e8f5e9",
     "warning_bg": "#fef6e4",
     "break_bg": "#eef4fb",
     "break_accent": "#5090e0",
@@ -49,7 +46,8 @@ class PomodoroTimer:
         self.load_config()
 
         # Window always on top
-        self.root.attributes("-topmost", self.config["always_on_top"])
+        if self.config["always_on_top"]:
+            self.root.attributes("-topmost", True)
 
         # Window size & position
         self.root.geometry("360x580")
@@ -79,7 +77,7 @@ class PomodoroTimer:
                 with open(CONFIG_FILE, "r") as f:
                     saved = json.load(f)
                     self.config = {**DEFAULT_CONFIG, **saved}
-            except:
+            except Exception:
                 self.config = DEFAULT_CONFIG.copy()
         else:
             self.config = DEFAULT_CONFIG.copy()
@@ -88,13 +86,13 @@ class PomodoroTimer:
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.config, f, indent=2)
-        except:
+        except Exception:
             pass
 
     def center_window(self):
         self.root.update_idletasks()
-        w = self.root.winfo_width()
-        h = self.root.winfo_height()
+        w = 360
+        h = 580
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         x = (sw - w) // 2
@@ -106,83 +104,82 @@ class PomodoroTimer:
     def build_ui(self):
         self.root.columnconfigure(0, weight=1)
 
-        # --- Title ---
+        # ── Title ──
         title_frame = tk.Frame(self.root, bg=COLORS["bg"], height=60)
         title_frame.pack(fill="x", pady=(20, 2))
         tk.Label(
             title_frame,
             text="🍅 番茄钟",
-            font=("Helvetica Neue", 22, "bold"),
+            font=("Helvetica", 22, "bold"),
             bg=COLORS["bg"],
             fg=COLORS["accent"],
         ).pack()
 
-        # --- Current Time ---
+        # ── Current Time ──
         self.clock_label = tk.Label(
             title_frame,
             text="",
-            font=("Helvetica Neue", 13),
+            font=("Helvetica", 13),
             bg=COLORS["bg"],
             fg=COLORS["gray"],
         )
         self.clock_label.pack()
 
-        # --- Clock Face (prominent timer display) ---
+        # ── Clock Face (prominent timer display) ──
         clock_face = tk.Frame(
             self.root,
             bg=COLORS["clock_bg"],
             bd=1,
             relief="solid",
             highlightbackground=COLORS["clock_border"],
-            highlightcolor=COLORS["clock_border"],
             highlightthickness=1,
         )
         clock_face.pack(pady=(18, 10), padx=30, fill="x")
 
-        # Timer text - using Label for reliability (not canvas text)
+        # Timer text - big Label widget
         self.timer_label = tk.Label(
             clock_face,
             text="25:00",
-            font=("Helvetica Neue", 64, "bold"),
+            font=("Helvetica", 64, "bold"),
             bg=COLORS["clock_bg"],
             fg=COLORS["fg"],
         )
         self.timer_label.pack(pady=(28, 2))
 
-        # Status text 1 (session type)
+        # Status text
         self.status_label = tk.Label(
             clock_face,
             text="准备开始 🍅",
-            font=("Helvetica Neue", 13),
+            font=("Helvetica", 13),
             bg=COLORS["clock_bg"],
             fg=COLORS["gray"],
         )
         self.status_label.pack(pady=(0, 28))
 
-        # --- Session Counter ---
+        # ── Session Counter ──
         self.counter_label = tk.Label(
             self.root,
             text="",
-            font=("Helvetica Neue", 11),
+            font=("Helvetica", 11),
             bg=COLORS["bg"],
             fg=COLORS["gray"],
         )
         self.counter_label.pack(pady=(2, 2))
 
-        # --- Session Dots ---
-        self.status_frame = tk.Frame(self.root, bg=COLORS["bg"])
-        self.status_frame.pack(fill="x", pady=(2, 5))
-        self.session_dots_frame = tk.Frame(self.status_frame, bg=COLORS["bg"])
+        # ── Session Dots ──
+        dots_frame = tk.Frame(self.root, bg=COLORS["bg"])
+        dots_frame.pack(fill="x", pady=(2, 5))
+        self.session_dots_frame = tk.Frame(dots_frame, bg=COLORS["bg"])
         self.session_dots_frame.pack()
         self.session_dots = []
 
-        # --- Canvas / Progress Ring (visual decoration) ---
-        self.canvas_frame = tk.Frame(self.root, bg=COLORS["bg"])
-        self.canvas_frame.pack(pady=(2, 8))
+        # ── Progress Ring ──
+        canvas_frame = tk.Frame(self.root, bg=COLORS["bg"])
+        canvas_frame.pack(pady=(2, 8))
 
         canvas_size = 160
         self.canvas = tk.Canvas(
-            self.canvas_frame,
+            canvas_frame,
             width=canvas_size,
             height=canvas_size,
             bg=COLORS["bg"],
@@ -190,7 +187,6 @@ class PomodoroTimer:
         )
         self.canvas.pack()
 
-        # Draw circular progress ring
         cx = cy = canvas_size // 2
         r = 65
         self.arc_bg = self.canvas.create_oval(
@@ -204,63 +200,62 @@ class PomodoroTimer:
             style="arc",
         )
 
-        # Small status text on canvas
+        # Canvas status emoji
         self.canvas_status = self.canvas.create_text(
             cx, cy + 2,
-            text="⏳",
-            font=("Helvetica Neue", 28),
+            text="🍅",
+            font=("Helvetica", 28),
             fill=COLORS["gray"],
         )
 
-        # --- Buttons ---
+        # ── Buttons ──
         btn_frame = tk.Frame(self.root, bg=COLORS["bg"])
         btn_frame.pack(pady=(8, 5))
 
-        self.start_btn = self.create_button(
-            btn_frame, "▶ 开始", COLORS["accent"], COLORS["white"], self.start_timer
+        self.start_btn = tk.Button(
+            btn_frame, text="▶ 开始",
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["accent"], fg=COLORS["white"],
+            activebackground=COLORS["accent_light"], activeforeground=COLORS["white"],
+            bd=0, padx=18, pady=6,
+            command=self.start_timer,
         )
         self.start_btn.pack(side="left", padx=4)
 
-        self.pause_btn = self.create_button(
-            btn_frame, "⏸ 暂停", COLORS["accent_light"], COLORS["white"],
-            self.pause_timer, state="disabled"
+        self.pause_btn = tk.Button(
+            btn_frame, text="⏸ 暂停",
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["accent_light"], fg=COLORS["white"],
+            activebackground=COLORS["accent"], activeforeground=COLORS["white"],
+            bd=0, padx=18, pady=6,
+            state="disabled",
+            command=self.pause_timer,
         )
         self.pause_btn.pack(side="left", padx=4)
 
-        self.reset_btn = self.create_button(
-            btn_frame, "↺ 重置", COLORS["light_gray"], COLORS["fg"], self.reset_timer
+        self.reset_btn = tk.Button(
+            btn_frame, text="↺ 重置",
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["light_gray"], fg=COLORS["fg"],
+            activebackground=COLORS["gray"], activeforeground=COLORS["white"],
+            bd=0, padx=18, pady=6,
+            command=self.reset_timer,
         )
         self.reset_btn.pack(side="left", padx=4)
 
-        # --- Settings Button ---
+        # ── Settings ──
         settings_frame = tk.Frame(self.root, bg=COLORS["bg"])
-        settings_frame.pack(pady=(8, 5))
+        settings_frame.pack(pady=(5, 10))
 
-        self.settings_btn = self.create_button(
-            settings_frame, "⚙ 设置", COLORS["gray"], COLORS["white"],
-            self.open_settings
+        self.settings_btn = tk.Button(
+            settings_frame, text="⚙ 设置",
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["gray"], fg=COLORS["white"],
+            activebackground=COLORS["accent"], activeforeground=COLORS["white"],
+            bd=0, padx=20, pady=5,
+            command=self.open_settings,
         )
         self.settings_btn.pack()
-
-    def create_button(self, parent, text, bg, fg, command, state="normal"):
-        btn = tk.Button(
-            parent,
-            text=text,
-            font=("Helvetica Neue", 11, "bold"),
-            bg=bg,
-            fg=fg,
-            activebackground=bg,
-            activeforeground=fg,
-            bd=0,
-            padx=20,
-            pady=8,
-            cursor="hand2",
-            state=state,
-            disabledforeground=COLORS["gray"],
-            command=command,
-        )
-        btn.config(relief="flat", highlightthickness=0)
-        return btn
 
     def update_session_dots(self):
         for dot in self.session_dots:
@@ -269,27 +264,23 @@ class PomodoroTimer:
 
         count = self.config["pomodoros_before_long_break"]
         for i in range(count):
-            if i < self.pomodoro_count % count:
-                color = COLORS["accent"]
-            else:
-                color = COLORS["light_gray"]
+            color = COLORS["accent"] if i < self.pomodoro_count % count else COLORS["light_gray"]
             dot = tk.Label(
                 self.session_dots_frame,
                 text="●",
-                font=("Helvetica Neue", 16),
+                font=("Helvetica", 16),
                 bg=COLORS["bg"],
                 fg=color,
             )
             dot.pack(side="left", padx=4)
             self.session_dots.append(dot)
 
-        txt = f"{self.pomodoro_count} 个番茄完成"
-        self.counter_label.config(text=txt)
+        self.counter_label.config(text=f"{self.pomodoro_count} 个番茄完成")
 
     # ─── Timer Logic ─────────────────────────────────────────────────────────
 
     def start_timer(self):
-        if self.state == "idle" or self.state == "paused":
+        if self.state in ("idle", "paused"):
             if self.state == "idle":
                 self.state = "work"
                 self.current_session_type = "work"
@@ -308,8 +299,7 @@ class PomodoroTimer:
             self.running = False
             self.paused = True
             self.state = "paused"
-            self.start_btn.config(state="normal")
-            self.start_btn.config(text="▶ 继续", bg=COLORS["success"])
+            self.start_btn.config(state="normal", text="▶ 继续", bg=COLORS["success"])
             self.pause_btn.config(state="disabled")
             self.update_ui_state()
 
@@ -334,7 +324,7 @@ class PomodoroTimer:
                 self.state = "long_break"
                 self.current_session_type = "long_break"
                 self.remaining_seconds = self.config["long_break_minutes"] * 60
-                self.show_notification("🍅 番茄完成!", "该休息一下了！长休息 15 分钟 ☕")
+                self.show_notification("🍅 番茄完成!", "该休息一下了！长休息 ☕")
             else:
                 self.state = "short_break"
                 self.current_session_type = "short_break"
@@ -357,34 +347,23 @@ class PomodoroTimer:
             os.system(
                 f'osascript -e \'display notification "{message}" with title "{title}" sound name "default"\''
             )
-        except:
+        except Exception:
             pass
 
     def update_ui_state(self):
         """Update background colors based on current state."""
-        if self.current_session_type == "work":
-            if self.running:
-                self.root.configure(bg=COLORS["warning_bg"])
-                self.canvas.configure(bg=COLORS["warning_bg"])
-                self.canvas_frame.configure(bg=COLORS["warning_bg"])
-            else:
-                self.root.configure(bg=COLORS["bg"])
-                self.canvas.configure(bg=COLORS["bg"])
-                self.canvas_frame.configure(bg=COLORS["bg"])
-            self.canvas.itemconfig(self.arc_progress, outline=COLORS["accent"])
+        if self.state == "paused":
+            bg_color = COLORS["bg"]
+        elif self.current_session_type == "work":
+            bg_color = COLORS["warning_bg"] if self.running else COLORS["bg"]
         else:
-            self.root.configure(bg=COLORS["break_bg"])
-            self.canvas.configure(bg=COLORS["break_bg"])
-            self.canvas_frame.configure(bg=COLORS["break_bg"])
-            self.canvas.itemconfig(self.arc_progress, outline=COLORS["break_accent"])
+            bg_color = COLORS["break_bg"]
 
-        # Update all background-dependent widgets
-        for widget in [self.status_frame, self.session_dots_frame,
-                       self.counter_label, self.status_frame]:
-            try:
-                widget.configure(bg=self.root.cget("bg"))
-            except:
-                pass
+        self.root.configure(bg=bg_color)
+        self.canvas.configure(bg=bg_color)
+
+        arc_color = COLORS["accent"] if self.current_session_type == "work" else COLORS["break_accent"]
+        self.canvas.itemconfig(self.arc_progress, outline=arc_color)
 
     # ─── Display Update ──────────────────────────────────────────────────────
 
@@ -392,58 +371,45 @@ class PomodoroTimer:
         if self.running and self.remaining_seconds > 0:
             self.remaining_seconds -= 1
 
-        # Update clock
-        now = time.strftime("%H:%M")
-        self.clock_label.config(text=now)
+        # Clock
+        self.clock_label.config(text=time.strftime("%H:%M"))
 
-        # Update timer text (Label widget - reliable)
-        minutes = self.remaining_seconds // 60
-        seconds = self.remaining_seconds % 60
-        self.timer_label.config(text=f"{minutes:02d}:{seconds:02d}")
+        # Timer
+        mins = self.remaining_seconds // 60
+        secs = self.remaining_seconds % 60
+        self.timer_label.config(text=f"{mins:02d}:{secs:02d}")
 
-        # Update progress arc
+        # Progress arc
         total = self.get_total_seconds()
         if total > 0:
             progress = (total - self.remaining_seconds) / total * 360
             self.canvas.itemconfig(self.arc_progress, extent=progress)
 
-        # Update status text and canvas emoji
-        if self.state == "idle":
-            if self.current_session_type == "work":
-                self.status_label.config(text="准备开始 🍅")
-                self.canvas.itemconfig(self.canvas_status, text="🍅")
-            elif self.current_session_type == "short_break":
-                self.status_label.config(text="休息一下 ☕")
-                self.canvas.itemconfig(self.canvas_status, text="☕")
-            elif self.current_session_type == "long_break":
-                self.status_label.config(text="长休息 🎉")
-                self.canvas.itemconfig(self.canvas_status, text="🎉")
-        elif self.state == "paused":
-            self.status_label.config(text="已暂停 ⏸")
-            self.canvas.itemconfig(self.canvas_status, text="⏸")
-        elif self.state == "work":
-            self.status_label.config(text="专注中... 💪")
-            self.canvas.itemconfig(self.canvas_status, text="🍅")
-        elif self.state == "short_break":
-            self.status_label.config(text="休息一下 ☕")
-            self.canvas.itemconfig(self.canvas_status, text="☕")
-        elif self.state == "long_break":
-            self.status_label.config(text="长休息 🎉")
-            self.canvas.itemconfig(self.canvas_status, text="🎉")
+        # Status text and canvas emoji
+        status_map = {
+            "idle": ("准备开始", "🍅"),
+            "paused": ("已暂停", "⏸"),
+            "work": ("专注中...", "💪"),
+            "short_break": ("休息一下", "☕"),
+            "long_break": ("长休息", "🎉"),
+        }
+        text, emoji = status_map.get(self.state, ("", ""))
+        self.status_label.config(text=f"{text} {emoji}")
+        self.canvas.itemconfig(self.canvas_status, text=emoji)
 
-        # Check if timer finished
+        # Check timer end
         if self.running and self.remaining_seconds <= 0:
             self.finish_session()
 
-        # Update every 1 second
         self.root.after(1000, self.update_display)
 
     def get_total_seconds(self):
-        if self.current_session_type == "work":
+        t = self.current_session_type
+        if t == "work":
             return self.config["work_minutes"] * 60
-        elif self.current_session_type == "short_break":
+        elif t == "short_break":
             return self.config["short_break_minutes"] * 60
-        elif self.current_session_type == "long_break":
+        elif t == "long_break":
             return self.config["long_break_minutes"] * 60
         return self.config["work_minutes"] * 60
 
@@ -464,8 +430,8 @@ class PomodoroTimer:
         win.geometry(f"+{x}+{y}")
 
         tk.Label(
-            win, text="⚙ 设置", font=("Helvetica Neue", 18, "bold"),
-            bg=COLORS["bg"], fg=COLORS["fg"]
+            win, text="⚙ 设置", font=("Helvetica", 18, "bold"),
+            bg=COLORS["bg"], fg=COLORS["fg"],
         ).pack(pady=(20, 15))
 
         form_frame = tk.Frame(win, bg=COLORS["bg"])
@@ -483,7 +449,7 @@ class PomodoroTimer:
         for key, label_text, min_val, max_val in fields:
             tk.Label(
                 form_frame, text=label_text,
-                font=("Helvetica Neue", 11),
+                font=("Helvetica", 11),
                 bg=COLORS["bg"], fg=COLORS["fg"],
                 anchor="w",
             ).grid(row=row, column=0, sticky="w", pady=(8, 2))
@@ -491,11 +457,11 @@ class PomodoroTimer:
             var = tk.StringVar(value=str(self.config[key]))
             self.settings_vars[key] = var
 
-            validate_cmd = win.register(lambda v, mn=min_val, mx=max_val: self.validate_int(v, mn, mx))
+            vcmd = (win.register(lambda v, mn=min_val, mx=max_val: self.validate_int(v, mn, mx)), "%P")
             entry = ttk.Entry(
                 form_frame, textvariable=var, width=8,
-                font=("Helvetica Neue", 11),
-                validate="key", validatecommand=(validate_cmd, "%P"),
+                font=("Helvetica", 11),
+                validate="key", validatecommand=vcmd,
             )
             entry.grid(row=row + 1, column=0, sticky="w", pady=(0, 5))
             row += 2
@@ -504,7 +470,7 @@ class PomodoroTimer:
         tk.Checkbutton(
             form_frame, text="显示系统通知",
             variable=self.notify_var,
-            font=("Helvetica Neue", 11),
+            font=("Helvetica", 11),
             bg=COLORS["bg"], fg=COLORS["fg"],
             selectcolor=COLORS["white"],
             activebackground=COLORS["bg"],
@@ -515,21 +481,30 @@ class PomodoroTimer:
         tk.Checkbutton(
             form_frame, text="窗口置顶",
             variable=self.topmost_var,
-            font=("Helvetica Neue", 11),
+            font=("Helvetica", 11),
             bg=COLORS["bg"], fg=COLORS["fg"],
             selectcolor=COLORS["white"],
             activebackground=COLORS["bg"],
         ).grid(row=row, column=0, sticky="w", pady=(5, 15))
 
-        btn_save = self.create_button(
-            win, "💾 保存", COLORS["accent"], COLORS["white"], lambda: self.save_settings(win)
-        )
-        btn_save.pack(pady=(5, 5))
+        btn_frame = tk.Frame(win, bg=COLORS["bg"])
+        btn_frame.pack(pady=(5, 5))
 
-        btn_cancel = self.create_button(
-            win, "取消", COLORS["light_gray"], COLORS["fg"], win.destroy
-        )
-        btn_cancel.pack(pady=(0, 15))
+        tk.Button(
+            btn_frame, text="💾 保存",
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["accent"], fg=COLORS["white"],
+            bd=0, padx=20, pady=5,
+            command=lambda: self.save_settings(win),
+        ).pack(pady=(0, 5))
+
+        tk.Button(
+            win, text="取消",
+            font=("Helvetica", 11, "bold"),
+            bg=COLORS["light_gray"], fg=COLORS["fg"],
+            bd=0, padx=20, pady=5,
+            command=win.destroy,
+        ).pack(pady=(0, 15))
 
     def validate_int(self, value, min_val, max_val):
         if value == "":
@@ -537,7 +512,7 @@ class PomodoroTimer:
         try:
             v = int(value)
             return min_val <= v <= max_val
-        except:
+        except ValueError:
             return False
 
     def save_settings(self, win):
@@ -550,11 +525,9 @@ class PomodoroTimer:
 
         self.config["show_notifications"] = self.notify_var.get()
         self.config["always_on_top"] = self.topmost_var.get()
-
         self.root.attributes("-topmost", self.config["always_on_top"])
 
         self.save_config()
-
         self.reset_timer()
         self.update_session_dots()
 
